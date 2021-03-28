@@ -6,7 +6,7 @@
 
 #define uSize (260*2)
 ///
-///  ��ȡָ��·�����ļ�
+///  读取指定路径的文件
 ///
 NTSTATUS
 MyCopyFile(IN PUNICODE_STRING Path)
@@ -23,20 +23,20 @@ MyCopyFile(IN PUNICODE_STRING Path)
 		NULL);
 	IO_STATUS_BLOCK ioStatusBlock = { 0 };
 
-	// ��ȡ�ļ����
-	status = ZwCreateFile(&hFile,	//���ָ��
-		0x81,
+	// 获取文件句柄
+	status = ZwCreateFile(&hFile,	//句柄指针
+		FILE_GENERIC_READ,
 		&oa,						// OA
-		&ioStatusBlock,				// io״̬
-		NULL,						// һ����NULL
-		FILE_ATTRIBUTE_NORMAL,		// �ļ�����һ��дNORMAL
-		FILE_SHARE_READ,			// �ļ������ԣ�
-									// һ��ֻ��дFILE_SHARE_READ���У�
-									// ���������������Ҫд��0x7Ҳ����ȫ����ģʽ
-		FILE_OPEN,//���ļ�������ʱ������ʧ��
-		FILE_SYNCHRONOUS_IO_NONALERT, // �ļ���Ŀ¼����
-									 // �����ļ�����ֱ��д���ļ�ϵͳ��ֱ��д�벻�����������ʱ���⣬��IOռ�úࣩܶ
-		NULL, //EA������дNULL�������ļ��������������豸�Ľ���������EAдNULL,EA����Ҳ��0
+		&ioStatusBlock,				// io状态
+		NULL,						// 一般添NULL
+		FILE_ATTRIBUTE_NORMAL,		// 文件属性一般写NORMAL
+		FILE_SHARE_READ,			// 文件共享性，
+									// 一般只填写FILE_SHARE_READ就行，
+									// 但是特殊情况下需要写入0x7也就是全共享模式
+		FILE_OPEN,//当文件不存在时，返回失败
+		FILE_SYNCHRONOUS_IO_NONALERT, // 文件非目录性质
+									 // 并且文件操作直接写入文件系统（直接写入不会产生缓冲延时问题，但IO占用很多）
+		NULL, //EA属性填写NULL，这是文件创建不是驱动设备的交互，所以EA写NULL,EA长度也是0
 		0);
 
 	if (!NT_SUCCESS(status))
@@ -45,7 +45,7 @@ MyCopyFile(IN PUNICODE_STRING Path)
 		return status;
 	}
 
-	// �����ļ�����ļ���ȡ�ļ���С
+	// 根据文件句柄文件获取文件大小
 	SIZE_T uFileSize = 0;
 	FILE_STANDARD_INFORMATION fileStandardInformation = { 0 };
 	RtlZeroMemory(&ioStatusBlock, sizeof(ioStatusBlock));
@@ -59,7 +59,7 @@ MyCopyFile(IN PUNICODE_STRING Path)
 		uFileSize = fileStandardInformation.EndOfFile.QuadPart;
 	}
 
-	// �����Ӧ��С������
+	// 申请对应大小的数据
 	PVOID pBuffer = NULL;
 	pBuffer = ExAllocatePoolWithTag(PagedPool, uFileSize, DUMP_FILE_TAG);
 	if (!pBuffer)
@@ -72,7 +72,7 @@ MyCopyFile(IN PUNICODE_STRING Path)
 	
 	LARGE_INTEGER offset = { 0 };
 	offset.QuadPart = 0;
-	// ��ȡ�ļ�����
+	// 读取文件数据
 	status = ZwReadFile(hFile, 
 		NULL,
 		NULL,
@@ -92,7 +92,7 @@ MyCopyFile(IN PUNICODE_STRING Path)
 
 	PWCHAR pTempBuf = NULL;
 	USHORT uTempSize = 0;
-	// ��ȡ�ļ�����
+	// 获取文件名称
 	USHORT i = (Path->Length - sizeof(WCHAR)) / sizeof(WCHAR);
 	for (; i != 0; i--)
 	{
@@ -111,9 +111,9 @@ MyCopyFile(IN PUNICODE_STRING Path)
 	
 
 	
-	// ����һ��dump���ļ�
+	// 创建一个dump的文件
 	UNICODE_STRING ustrDumpFile = { 0 };
-	// ƴ��һ����ʽ��
+	// 拼接一个格式的
 
 	WCHAR szBuffer[uSize] = { 0 };
 	RtlInitEmptyUnicodeString(&ustrDumpFile, szBuffer, uSize);
@@ -129,19 +129,19 @@ MyCopyFile(IN PUNICODE_STRING Path)
 	
 	
 	status = ZwCreateFile(&hWriteFile,
-		GENERIC_WRITE,//��д����
+		GENERIC_WRITE,//读写访问
 		&objectAttributes,//OA
-		&ioStatusBlock,//io״̬
-		NULL,//һ����NULL
-		FILE_ATTRIBUTE_NORMAL,//�ļ�����һ��дNORMAL
-		FILE_SHARE_VALID_FLAGS,//�ļ������ԣ�
-										   // һ��ֻ��дFILE_SHARE_READ���У�
-										   // ���������������Ҫд��0x7Ҳ����ȫ����ģʽ
-		FILE_OPEN_IF,//���ļ�������ʱ�����������ڴ�
+		&ioStatusBlock,//io状态
+		NULL,//一般添NULL
+		FILE_ATTRIBUTE_NORMAL,//文件属性一般写NORMAL
+		FILE_SHARE_VALID_FLAGS,//文件共享性，
+										   // 一般只填写FILE_SHARE_READ就行，
+										   // 但是特殊情况下需要写入0x7也就是全共享模式
+		FILE_OPEN_IF,//当文件不存在时，创建，存在打开
 		FILE_SYNCHRONOUS_IO_NONALERT,//
-															   // �ļ���Ŀ¼����
-															   // �����ļ�����ֱ��д���ļ�ϵͳ��ֱ��д�벻�����������ʱ���⣬��IOռ�úࣩܶ
-		NULL, //EA������дNULL�������ļ��������������豸�Ľ���������EAдNULL,EA����Ҳ��0
+															   // 文件非目录性质
+															   // 并且文件操作直接写入文件系统（直接写入不会产生缓冲延时问题，但IO占用很多）
+		NULL, //EA属性填写NULL，这是文件创建不是驱动设备的交互，所以EA写NULL,EA长度也是0
 		0);
 
 	if (NT_SUCCESS(status))
